@@ -1,15 +1,19 @@
 import http from 'node:http';
+import fs from 'node:fs';
 import crypto from 'node:crypto';
 import admin from 'firebase-admin';
 import pino from 'pino';
 import QRCode from 'qrcode';
-import baileys from '@whiskeysockets/baileys';
+import { makeWASocket, DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore } from '@whiskeysockets/baileys';
 import { useFirestoreAuthState } from './authstate.js';
 import { makeCore, chatKey, clean } from './core.js';
 
-const { makeWASocket, DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore } = baileys;
+// Configuración desde archivos (para Windows): config.json y, opcionalmente, firebase.json (la llave de la cuenta de servicio)
+try { const c = JSON.parse(fs.readFileSync(new URL('./config.json', import.meta.url), 'utf8')); for (const k of Object.keys(c)) if (!process.env[k]) process.env[k] = typeof c[k] === 'object' ? JSON.stringify(c[k]) : String(c[k]); } catch (e) { if (e.code !== 'ENOENT') { console.error('config.json inválido:', e.message); process.exit(1); } }
+if (!process.env.FIREBASE_SERVICE_ACCOUNT) { try { process.env.FIREBASE_SERVICE_ACCOUNT = JSON.stringify(JSON.parse(fs.readFileSync(new URL('./firebase.json', import.meta.url), 'utf8'))); } catch (e) {} }
 const { FIREBASE_SERVICE_ACCOUNT, BOT_URL, BOT_SECRET, GW_KEY, PORT = 3000, HANDOFF_MIN = '15' } = process.env;
-for (const [k, v] of Object.entries({ FIREBASE_SERVICE_ACCOUNT, BOT_URL, BOT_SECRET, GW_KEY })) if (!v) { console.error('Falta la variable ' + k); process.exit(1); }
+const SEND_ONLY = /^(1|true|si|sí|yes)$/i.test(process.env.SEND_ONLY || '');
+for (const [k, v] of Object.entries(SEND_ONLY ? { FIREBASE_SERVICE_ACCOUNT, GW_KEY } : { FIREBASE_SERVICE_ACCOUNT, BOT_URL, BOT_SECRET, GW_KEY })) if (!v) { console.error('Falta la variable ' + k); process.exit(1); }
 
 admin.initializeApp({ credential: admin.credential.cert(JSON.parse(FIREBASE_SERVICE_ACCOUNT)) });
 const db = admin.firestore();
@@ -45,7 +49,14 @@ async function sendText(jid, text, opt = {}) {
   return m && m.key && m.key.id;
 }
 
-const core = makeCore({ askBot, sendText, mirror, handoffMin: +HANDOFF_MIN });
+// Interruptor del bot por QR: se cambia desde el POS (Ajustes → Conexión directa de WhatsApp). Por defecto, APAGADO.
+let botFlag = false;
+try {
+  db.collection('pos_wacfg').doc('main').onSnapshot(s => { const v = !!(s.exists && s.data().bot === true); if (v !== botFlag) console.log('Bot por QR:', v ? 'ENCENDIDO' : 'APAGADO'); botFlag = v; }, e => console.error('wacfg', e && e.message));
+} catch (e) { console.error('wacfg', e && e.message); }
+const botIsOn = () => !SEND_ONLY && botFlag;
+const core = makeCore({ askBot, sendText, mirror, handoffMin: +HANDOFF_MIN, sendOnly: SEND_ONLY, botOn: botIsOn });
+if (SEND_ONLY) console.log('MODO SOLO ENVÍO: el bot no responde desde aquí; solo se envían los mensajes del POS');
 
 async function start() {
   authApi = authApi || await useFirestoreAuthState(db);
@@ -63,6 +74,10 @@ async function start() {
     if (u.connection === 'close') {
       const code = u.lastDisconnect && u.lastDisconnect.error && u.lastDisconnect.error.output && u.lastDisconnect.error.output.statusCode;
       st = { state: 'cerrado', qr: '', me: '', since: Date.now() };
+      if (code === DisconnectReason.connectionReplaced) {
+        console.log('Otra copia del servicio tomó esta sesión de WhatsApp (¿sigue abierto INICIAR.bat en el computador?). Esta copia se detiene.');
+        process.exit(0);
+      }
       if (code === DisconnectReason.loggedOut) {
         console.log('Sesión cerrada desde el celular: se borra y se pide un QR nuevo');
         try { await authApi.clear(); } catch (e) {}
@@ -82,7 +97,7 @@ async function start() {
 
 // ---- servidor web: pantalla del QR, estado y envío desde el POS ----
 const okKey = k => { const a = Buffer.from(String(k || '')), b = Buffer.from(GW_KEY); return a.length === b.length && crypto.timingSafeEqual(a, b); };
-const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type,x-key', 'access-control-allow-methods': 'GET,POST,OPTIONS' };
+const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type,x-key', 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-allow-private-network': 'true' };
 const json = (res, code, o) => { res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...cors }); res.end(JSON.stringify(o)); };
 const readBody = req => new Promise(r => { let b = ''; req.on('data', c => { b += c; if (b.length > 20000) req.destroy(); }); req.on('end', () => { try { r(JSON.parse(b || '{}')); } catch (e) { r({}); } }); });
 
@@ -91,7 +106,7 @@ http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204, cors); return res.end(); }
   if (u.pathname === '/' || u.pathname === '/health') return json(res, 200, { ok: true });
   if (!okKey(key)) return json(res, 401, { error: 'clave' });
-  if (u.pathname === '/status') return json(res, 200, { state: st.state, me: st.me, qr: !!st.qr });
+  if (u.pathname === '/status') return json(res, 200, { state: st.state, me: st.me, qr: !!st.qr, bot: botIsOn(), sendOnly: SEND_ONLY });
   if (u.pathname === '/send' && req.method === 'POST') {
     const b = await readBody(req);
     try { await core.sendFromPos(b.to, b.text); return json(res, 200, { ok: true }); }

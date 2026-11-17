@@ -33,13 +33,14 @@ export function senderOf(key) {
   return 'lid:' + digitsOf(jid);
 }
 
-export function makeCore({ askBot, sendText, mirror, handoffMin = 15, maxAgeSec = 150, now = () => Date.now(), log = console }) {
+export function makeCore({ askBot, sendText, mirror, sendOnly = false, botOn = () => true, handoffMin = 15, maxAgeSec = 150, now = () => Date.now(), log = console }) {
   const seen = new Set(), sentIds = new Set(), humanAt = new Map(), queues = new Map();
   const rememberSent = id => { if (id) { sentIds.add(id); if (sentIds.size > 500) sentIds.delete(sentIds.values().next().value); } };
   const once = id => { if (!id) return true; if (seen.has(id)) return false; seen.add(id); if (seen.size > 2000) seen.delete(seen.values().next().value); return true; };
   const enqueue = (k, fn) => { const p = (queues.get(k) || Promise.resolve()).then(fn).catch(e => log.error('cola', e && e.message)); queues.set(k, p); p.finally(() => { if (queues.get(k) === p) queues.delete(k); }); return p; };
 
   async function onMessage(m) {
+    if (sendOnly || !botOn()) return; // bot apagado (solo envío): no lee ni responde mensajes (AutoResponder puede atender)
     const key = m.key || {}, jid = key.remoteJid || '';
     if (!m.message || !jid || jid.endsWith('@g.us') || jid.endsWith('@broadcast') || jid.endsWith('@newsletter') || jid === 'status@broadcast') return;
     const ts = Number(m.messageTimestamp && (m.messageTimestamp.toNumber ? m.messageTimestamp.toNumber() : m.messageTimestamp)) || 0;
@@ -79,7 +80,7 @@ export function makeCore({ askBot, sendText, mirror, handoffMin = 15, maxAgeSec 
     const id = await sendText(jid, t, { quick: true });
     rememberSent(id);
     humanAt.set(jid, now());
-    await mirror({ sender: digitsOf(jid), name: '', role: 'h', text: t });
+    if (!sendOnly && botOn()) await mirror({ sender: digitsOf(jid), name: '', role: 'h', text: t });
     return id;
   }
   return { onMessage, sendFromPos, _humanAt: humanAt };

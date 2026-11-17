@@ -34,6 +34,15 @@ const msg = (id, text, extra = {}) => ({ key: { id, remoteJid: '573001234567@s.w
   t('envío desde POS: 10 dígitos -> +57', x.log.sent[0][0] === '573001234567@s.whatsapp.net');
   t('envío desde POS se copia al panel', x.log.mir[0].role === 'h' && x.log.mir[0].sender === '573001234567');
   await assert.rejects(() => x.core.sendFromPos('12', 'x')); t('número inválido se rechaza', true); }
+{ const log = { sent: [], mir: [], asked: [] }; const c = makeCore({ sendOnly: true, askBot: async q => { log.asked.push(q); return [{ message: 'x' }]; }, sendText: async (j, x) => { log.sent.push([j, x]); return 'Z'; }, mirror: async m => log.mir.push(m), log: { error() {} } });
+  await c.onMessage(msg('9', 'hola', { ts: Math.floor(Date.now() / 1000) }));
+  t('solo envío: no responde ni consulta al bot', log.asked.length === 0 && log.sent.length === 0);
+  await c.sendFromPos('3001234567', 'Listo'); t('solo envío: sí envía desde el POS, sin copiar al panel', log.sent.length === 1 && log.mir.length === 0); }
+{ const log = { sent: [], mir: [], asked: [] }; let on = false; const c = makeCore({ botOn: () => on, askBot: async q => { log.asked.push(q); return [{ message: 'x' }]; }, sendText: async (j, x) => { log.sent.push([j, x]); return 'Q' + log.sent.length; }, mirror: async m => log.mir.push(m), log: { error() {} } });
+  const nowS = () => Math.floor(Date.now() / 1000);
+  await c.onMessage(msg('b1', 'hola', { ts: nowS() })); t('bot apagado desde el POS: no responde', log.asked.length === 0 && log.sent.length === 0);
+  await c.sendFromPos('3001234567', 'Hola'); t('bot apagado: aun así el POS puede enviar', log.sent.length === 1 && log.mir.length === 0);
+  on = true; await c.onMessage(msg('b2', 'hola otra vez', { ts: nowS(), key: { remoteJid: '573009998888@s.whatsapp.net' } })); t('bot encendido: responde', log.asked.length === 1 && log.sent.length === 2); }
 t('toJid', toJid('300 123 4567') === '573001234567@s.whatsapp.net' && toJid('') === '');
 t('senderOf lid sin número', senderOf({ remoteJid: '9988@lid' }) === 'lid:9988');
 t('senderOf lid con número alterno', senderOf({ remoteJid: '9988@lid', remoteJidAlt: '573001112222@s.whatsapp.net' }) === '573001112222');

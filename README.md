@@ -15,11 +15,16 @@ Reemplaza a AutoResponder.ai: el celular ya no tiene que estar prendido ni con l
 4. Pestaña **Settings → Networking → Generate Domain**. Anota la dirección (ej. `https://wa-gateway-production.up.railway.app`).
 5. Espera a que diga **Active/Deployed**.
 
+### Modo «solo envío» (AutoResponder sigue respondiendo)
+Agrega la variable `SEND_ONLY` = `true`. Entonces este servicio **no lee ni responde mensajes**: solo sirve para que el POS envíe
+mensajes rápidos y escritos a mano. En este modo no necesitas `BOT_URL` ni `BOT_SECRET`, y NO apagues AutoResponder.
+(Para pasar después al modo completo, borra `SEND_ONLY` y apaga AutoResponder.)
+
 ## 2. Vincular el WhatsApp
 1. Abre `https://TU-DIRECCION/qr?key=TU_GW_KEY` (o desde el POS: Ajustes → Conexión directa de WhatsApp → «Abrir pantalla del QR»).
 2. En el celular del negocio: WhatsApp → **Dispositivos vinculados → Vincular un dispositivo** y escanea el código.
 3. La página debe decir «✅ WhatsApp conectado».
-4. **Apaga AutoResponder.ai** (o desactiva sus respuestas); si no, el cliente recibiría dos respuestas.
+4. Modo completo: **apaga AutoResponder.ai**; si no, el cliente recibiría dos respuestas. (En modo `SEND_ONLY` déjalo prendido.)
 
 ## 3. Conectarlo al POS
 POS → Ajustes → **Conexión directa de WhatsApp**: pon la dirección y la clave (`GW_KEY`) y toca «Probar conexión».
@@ -33,3 +38,9 @@ Desde ahí, «💬 Mensaje», «Responder» y los mensajes rápidos se envían s
 - Es una conexión no oficial de WhatsApp Web: con pocos mensajes al día el riesgo de bloqueo es bajo, pero no es cero.
 - La sesión se guarda en Firestore (`wa_auth`), así que sobrevive a reinicios y despliegues.
 - Pruebas internas: `npm install && npm test`.
+
+## Modo completo en Railway (el bot responde por el QR)
+Variables del servicio: `FIREBASE_SERVICE_ACCOUNT`, `BOT_URL=https://comd-rap-el-carbon-menu.vercel.app`, `BOT_SECRET`, `GW_KEY` (no pongas `SEND_ONLY`).
+Después: Settings → Networking → Generate Domain, abre `https://TU-DOMINIO/qr?key=GW_KEY` y escanea.
+El bot por QR arranca APAGADO; se enciende/apaga en el POS: Ajustes → Conexión directa → «Que el bot responda por este QR».
+Apagado: el QR solo envía lo que escribes en el POS. No dejes AutoResponder y el bot QR encendidos a la vez para el mismo número (respuesta doble).

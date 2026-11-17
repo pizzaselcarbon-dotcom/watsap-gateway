@@ -1,0 +1,54 @@
+WHATSAPP DEL POS EN EL COMPUTADOR (modo solo envío)
+====================================================
+
+1) Instalar Node.js (una sola vez)
+   - Entra a https://nodejs.org y descarga la versión "LTS". Instálala con "Siguiente, siguiente".
+
+2) Preparar la carpeta
+   - Descomprime el zip en una carpeta fija, por ejemplo C:\wa-gateway
+   - Copia "config.ejemplo.json" como "config.json" y ábrelo con el Bloc de notas:
+       GW_KEY  -> cambia el texto por una clave larga que inventes (la usarás en el POS)
+       SEND_ONLY queda en true (AutoResponder sigue respondiendo; NO lo apagues)
+   - Pon aquí la llave de Firebase:
+       En Firebase Console -> proyecto pos-2-c06ef -> Configuración (engranaje) -> Cuentas de servicio
+       -> "Generar nueva clave privada". Se descarga un archivo .json.
+       Cámbiale el nombre a  firebase.json  y ponlo en esta carpeta (junto a INICIAR.bat).
+       (Es la misma llave que usas en Vercel como FIREBASE_SERVICE_ACCOUNT. Si prefieres, abre ese archivo
+        en el Bloc de notas y copia TODO el contenido dentro de firebase.json.)
+
+3) Encender
+   - Doble clic en INICIAR.bat. La primera vez instala cosas (1-2 minutos).
+   - Si Windows pregunta por el Firewall, elige "Permitir".
+   - Deja esa ventana abierta (puedes minimizarla).
+
+4) Vincular el WhatsApp (una sola vez)
+   - Abre en Chrome o Edge:  http://localhost:3000/qr?key=TU_CLAVE      (TU_CLAVE = la del config.json)
+   - En el celular del negocio: WhatsApp -> Dispositivos vinculados -> Vincular un dispositivo -> escanea el código.
+   - Debe decir "WhatsApp conectado".
+
+5) Conectar el POS
+   - En el POS (abierto en ESTE computador, con Chrome o Edge): Ajustes -> Conexión directa de WhatsApp
+       Dirección:  http://localhost:3000
+       Clave:      la de config.json
+     Toca "Probar conexión": debe decir "Conectado como +57...".
+
+6) Que arranque solo al prender el computador (opcional)
+   - Presiona Windows + R, escribe  shell:startup  y Enter.
+   - Arrastra ahí un acceso directo de INICIAR.bat (clic derecho -> Crear acceso directo).
+
+IMPORTANTE
+- Esto solo funciona desde el POS abierto en este mismo computador (la dirección localhost es solo de este equipo).
+  En otros dispositivos (tablet, celular) el botón "Enviar" avisará que no pudo y podrás usar "Abrir en WhatsApp (manual)".
+- Si el computador está apagado, el POS no puede enviar directo; usa el botón manual.
+- El celular debe abrir WhatsApp al menos una vez cada ~2 semanas.
+- Para detenerlo: cierra la ventana negra de INICIAR.bat.
+
+USAR EL POS DESDE LA TABLET (túnel gratis de Cloudflare)
+--------------------------------------------------------
+- Descarga  cloudflared-windows-amd64.exe  de https://github.com/cloudflare/cloudflared/releases/latest
+  (sección "Assets"), ponlo en esta carpeta y renómbralo a  cloudflared.exe
+- Con INICIAR.bat ya abierto, abre también INICIAR-TUNEL.bat.
+- En su ventana aparece una dirección  https://algo-raro.trycloudflare.com  -> cópiala.
+- En el POS: Ajustes -> Conexión directa de WhatsApp -> Dirección del servicio = esa dirección (con https, sin "/" al final).
+  La clave sigue siendo la misma (GW_KEY). La tablet la recibe sola porque el ajuste se sincroniza.
+- La dirección cambia cada vez que reinicias el túnel.
