@@ -33,7 +33,7 @@ export function senderOf(key) {
   return 'lid:' + digitsOf(jid);
 }
 
-export function makeCore({ askBot, sendText, mirror, sendOnly = false, botOn = () => true, handoffMin = 15, maxAgeSec = 150, now = () => Date.now(), log = console }) {
+export function makeCore({ askBot, sendText, mirror, sendOnly = false, botOn = () => true, transcribe = null, handoffMin = 15, maxAgeSec = 150, now = () => Date.now(), log = console }) {
   const seen = new Set(), sentIds = new Set(), humanAt = new Map(), queues = new Map();
   const rememberSent = id => { if (id) { sentIds.add(id); if (sentIds.size > 500) sentIds.delete(sentIds.values().next().value); } };
   const once = id => { if (!id) return true; if (seen.has(id)) return false; seen.add(id); if (seen.size > 2000) seen.delete(seen.values().next().value); return true; };
@@ -46,16 +46,20 @@ export function makeCore({ askBot, sendText, mirror, sendOnly = false, botOn = (
     const ts = Number(m.messageTimestamp && (m.messageTimestamp.toNumber ? m.messageTimestamp.toNumber() : m.messageTimestamp)) || 0;
     if (ts && now() / 1000 - ts > maxAgeSec) return; // mensajes viejos que llegan al reconectar
     if (!once(key.id)) return;
-    const { text, media } = textOf(m.message);
-    if (!text) return;
+    const { text: text0, media: media0 } = textOf(m.message);
+    if (!text0) return;
     const sender = senderOf(key);
     if (key.fromMe) {
       if (sentIds.has(key.id)) return; // lo envió este mismo servicio
       humanAt.set(jid, now());       // alguien del negocio escribió desde el celular: el bot se calla un rato
-      await mirror({ sender, name: '', role: 'h', text });
+      await mirror({ sender, name: '', role: 'h', text: text0 });
       return;
     }
     return enqueue(jid, async () => {
+      let text = text0, media = media0;
+      if (media && transcribe && m.message.audioMessage) { // nota de voz: se pasa a texto y el bot responde como si lo hubiera escrito
+        try { const tr = clean(await transcribe(m), 800); if (tr) { text = '🎤 ' + tr; media = false; } } catch (e) { log.error('audio', e && e.message); }
+      }
       if (media) { await mirror({ sender, name: clean(m.pushName, 60), role: 'u', text }); return; } // fotos, audios, etc.: solo se muestran en el POS
       // (los mensajes de texto y las respuestas del bot los copia el propio bot.js al POS)
       const last = humanAt.get(jid) || 0;

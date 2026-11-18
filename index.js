@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import admin from 'firebase-admin';
 import pino from 'pino';
 import QRCode from 'qrcode';
-import { makeWASocket, DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore } from '@whiskeysockets/baileys';
+import { makeWASocket, DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, downloadMediaMessage } from '@whiskeysockets/baileys';
 import { useFirestoreAuthState } from './authstate.js';
 import { makeCore, chatKey, clean } from './core.js';
 
@@ -55,7 +55,22 @@ try {
   db.collection('pos_wacfg').doc('main').onSnapshot(s => { const v = !!(s.exists && s.data().bot === true); if (v !== botFlag) console.log('Bot por QR:', v ? 'ENCENDIDO' : 'APAGADO'); botFlag = v; }, e => console.error('wacfg', e && e.message));
 } catch (e) { console.error('wacfg', e && e.message); }
 const botIsOn = () => !SEND_ONLY && botFlag;
-const core = makeCore({ askBot, sendText, mirror, handoffMin: +HANDOFF_MIN, sendOnly: SEND_ONLY, botOn: botIsOn });
+// Notas de voz → texto con OpenAI (opcional: necesita OPENAI_API_KEY en las variables)
+async function transcribe(m) {
+  const key = process.env.OPENAI_API_KEY, a = m.message && m.message.audioMessage;
+  if (!key || !a) return '';
+  if (Number(a.seconds || 0) > 120) return ''; // audios muy largos: los atiende una persona
+  const buf = await downloadMediaMessage(m, 'buffer', {}, { logger, reuploadRequest: sock && sock.updateMediaMessage });
+  if (!buf || buf.length > 3 * 1024 * 1024) return '';
+  const fd = new FormData();
+  fd.append('file', new Blob([buf], { type: a.mimetype || 'audio/ogg' }), 'audio.ogg');
+  fd.append('model', 'whisper-1'); fd.append('language', 'es');
+  const r = await fetch('https://api.openai.com/v1/audio/transcriptions', { method: 'POST', headers: { authorization: 'Bearer ' + key }, body: fd });
+  if (!r.ok) throw new Error('whisper ' + r.status);
+  const j = await r.json();
+  return String(j.text || '').trim();
+}
+const core = makeCore({ askBot, sendText, mirror, handoffMin: +HANDOFF_MIN, sendOnly: SEND_ONLY, botOn: botIsOn, transcribe: process.env.OPENAI_API_KEY ? transcribe : null });
 if (SEND_ONLY) console.log('MODO SOLO ENVÍO: el bot no responde desde aquí; solo se envían los mensajes del POS');
 
 async function start() {
