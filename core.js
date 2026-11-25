@@ -68,7 +68,7 @@ export function makeCore({ askBot, sendText, mirror, sendOnly = false, botOn = (
       try { replies = await askBot({ sender, message: text, name: clean(m.pushName, 60) }); }
       catch (e) { log.error('bot', e && e.message); return; }
       for (const r of replies) {
-        const t = clean(r && r.message, 4000) || '';
+        const t = String((r && r.message) == null ? '' : r.message).replace(/[\u0000-\u0009\u000b-\u001f]/g, ' ').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 4000); // conserva los saltos de línea
         if (!t) continue;
         const id = await sendText(jid, t);
         rememberSent(id);
